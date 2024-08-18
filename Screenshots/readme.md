@@ -1,111 +1,185 @@
-# kubernetes-playground
-## Create an nginx deployment in k8s with only 1 replica. 
-
-```yaml
-apiVersion: apps/v1
-kind: Deployment
+Step 1: Deploy a Basic Nginx Pod
+Create a Pod manifest for Nginx:
+yaml
+Copy code
+apiVersion: v1
+kind: Pod
 metadata:
-  name: nginx-deployment
+  name: nginx-pod
 spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: nginx
-  template:
-    metadata:
-      labels:
-        app: nginx
-    spec:
-      containers:
-      - name: nginx
-        image: nginx:latest
-        ports:
-        - containerPort: 80
-```
+  containers:
+  - name: nginx
+    image: nginx:latest
+    ports:
+    - containerPort: 80
+Apply the manifest to your cluster:
+bash
+Copy code
+kubectl apply -f nginx-pod.yaml
+Verify the Pod is running:
+bash
+Copy code
+kubectl get pods
+kubectl port-forward pod/nginx-pod 8080:80
+Access the Nginx default page:
 
-``` kubectl apply -f nginx.yaml ```
+Open a browser and navigate to http://localhost:8080 to see the default Nginx page.
+Screenshot: Take a screenshot showing the Nginx default page.
 
-## Scale the deployment to 3 replicas
+Step 2: Introduce an Init Container
+Update the Pod manifest to include an init container:
+yaml
+Copy code
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nginx-pod
+spec:
+  volumes:
+  - name: shared-data
+    emptyDir: {}
 
-```kubectl scale deployment nginx-deployment --replicas=3```
+  initContainers:
+  - name: init-fetch-index
+    image: curlimages/curl:latest
+    command: ['sh', '-c', 'curl -o /mnt/index.html http://example.com/index.html']
+    volumeMounts:
+    - name: shared-data
+      mountPath: /mnt
 
-## Exposing teh deployment to port 80
+  containers:
+  - name: nginx
+    image: nginx:latest
+    ports:
+    - containerPort: 80
+    volumeMounts:
+    - name: shared-data
+      mountPath: /usr/share/nginx/html
+Apply the updated manifest:
+bash
+Copy code
+kubectl apply -f nginx-pod.yaml
+Verify the Pod is running:
+bash
+Copy code
+kubectl get pods
+kubectl logs pod/nginx-pod -c init-fetch-index
+Port-forward and check the custom page:
+bash
+Copy code
+kubectl port-forward pod/nginx-pod 8080:80
+Open a browser and navigate to http://localhost:8080 to see the custom index.html served by Nginx.
+Screenshot: Take a screenshot showing the custom Nginx page.
+Step 3: Add a Liveness Probe
+Update the Pod manifest to include a liveness probe:
+yaml
+Copy code
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nginx-pod
+spec:
+  volumes:
+  - name: shared-data
+    emptyDir: {}
 
-```kubectl expose deployment nginx-deployment --port=80 --target-port=80 --name=nginx-service --type=ClusterIP```
+  initContainers:
+  - name: init-fetch-index
+    image: curlimages/curl:latest
+    command: ['sh', '-c', 'curl -o /mnt/index.html http://example.com/index.html']
+    volumeMounts:
+    - name: shared-data
+      mountPath: /mnt
 
-## Getting info about deployments 
+  containers:
+  - name: nginx
+    image: nginx:latest
+    ports:
+    - containerPort: 80
+    volumeMounts:
+    - name: shared-data
+      mountPath: /usr/share/nginx/html
+    livenessProbe:
+      httpGet:
+        path: /healthz
+        port: 80
+      initialDelaySeconds: 5
+      periodSeconds: 5
+Apply the updated manifest:
+bash
+Copy code
+kubectl apply -f nginx-pod.yaml
+Verify the liveness probe:
+bash
+Copy code
+kubectl describe pod/nginx-pod
+kubectl get pods
+Test liveness probe:
 
-```kubectl get deployments```
-```
-NAME               READY   UP-TO-DATE   AVAILABLE   AGE
-kubia              1/1     1            1           114m
-nginx-deployment   3/3     3            3           11m
-```
+Modify the Nginx configuration to serve a /healthz endpoint if needed, and verify that the liveness probe restarts the container if it fails.
+Screenshot: Take a screenshot showing the Pod's status and liveness probe in action.
 
-```kubectl get pods -o wide```
+Step 4: Add a HostPath Volume for Logs
+Update the Pod manifest to include a hostPath volume:
+yaml
+Copy code
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nginx-pod
+spec:
+  volumes:
+  - name: shared-data
+    emptyDir: {}
+  - name: nginx-logs
+    hostPath:
+      path: /var/log/nginx
+      type: DirectoryOrCreate
 
-```
-NAME                                READY   STATUS    RESTARTS   AGE    IP            NODE     NOMINATED NODE   READINESS GATES
-kubia-587b7cd6b7-vsh2p              1/1     Running   0          114m   10.42.0.99    pop-os   <none>           <none>
-nginx-deployment-7c79c4bf97-5l4pg   1/1     Running   0          11m    10.42.0.102   pop-os   <none>           <none>
-nginx-deployment-7c79c4bf97-7n8v2   1/1     Running   0          11m    10.42.0.101   pop-os   <none>           <none>
-nginx-deployment-7c79c4bf97-m9kbd   1/1     Running   0          11m    10.42.0.100   pop-os   <none>           <none>
-```
+  initContainers:
+  - name: init-fetch-index
+    image: curlimages/curl:latest
+    command: ['sh', '-c', 'curl -o /mnt/index.html http://example.com/index.html']
+    volumeMounts:
+    - name: shared-data
+      mountPath: /mnt
 
-```kubectl get service nginx-service```
-```
-NAME            TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)   AGE
-nginx-service   ClusterIP   10.43.240.244   <none>        80/TCP    1
-```
+  containers:
+  - name: nginx
+    image: nginx:latest
+    ports:
+    - containerPort: 80
+    volumeMounts:
+    - name: shared-data
+      mountPath: /usr/share/nginx/html
+    - name: nginx-logs
+      mountPath: /var/log/nginx
+    livenessProbe:
+      httpGet:
+        path: /healthz
+        port: 80
+      initialDelaySeconds: 5
+      periodSeconds: 5
+Apply the updated manifest:
+bash
+Copy code
+kubectl apply -f nginx-pod.yaml
+Verify the logs are being written to the hostPath volume:
+bash
+Copy code
+kubectl exec -it nginx-pod -- cat /var/log/nginx/access.log
+Check the hostPath on the node:
 
-## Curling the pod from inside another pod 
+SSH into the node if necessary and verify that logs are being stored at /var/log/nginx.
+Screenshot: Take a screenshot showing the logs being written to the hostPath volume.
 
-```kubectl run curlpod --image=radial/busyboxplus:curl -i --tty --rm --restart=Never -- /bin/sh```
+Final Steps
+Clean up:
 
-```
-If you don't see a command prompt, try pressing enter.
-[ root@curlpod:/ ]$ curl 10.43.240.244
-<!DOCTYPE html>
-<html>
-<head>
-<title>Welcome to nginx!</title>
-<style>
-html { color-scheme: light dark; }
-body { width: 35em; margin: 0 auto;
-font-family: Tahoma, Verdana, Arial, sans-serif; }
-</style>
-</head>
-<body>
-<h1>Welcome to nginx!</h1>
-<p>If you see this page, the nginx web server is successfully installed and
-working. Further configuration is required.</p>
+After verifying that everything works, you can delete the resources with:
+bash
+Copy code
+kubectl delete pod nginx-pod
+Document & Review:
 
-<p>For online documentation and support please refer to
-<a href="http://nginx.org/">nginx.org</a>.<br/>
-Commercial support is available at
-<a href="http://nginx.com/">nginx.com</a>.</p>
-
-<p><em>Thank you for using nginx.</em></p>
-</body>
-</html>
-[ root@curlpod:/ ]$ exit
-pod "curlpod" deleted
-```
-
-## delete pod 
-
-```kubectl delete pod -l app=nginx```
-
-```
-pod "nginx-deployment-7c79c4bf97-5l4pg" deleted
-pod "nginx-deployment-7c79c4bf97-7n8v2" deleted
-pod "nginx-deployment-7c79c4bf97-m9kbd" deleted
-```
-
-## trying to kill the process 
-
-```kubectl exec pod/nginx-deployment-7c79c4bf97-p67tg -- pkill nginx```
-
-```
-error: Internal error occurred: error executing command in container: failed to exec in container: failed to start exec "9cfbcfb1705b93d0f92aa238b65376035d3fcd38e0c460ee84c19e71c4e0a72a": OCI runtime exec failed: exec failed: unable to start container process: exec: "pkill": executable file not found in $PATH: unknown
-```
+Review your screenshots and ensure all steps are correctly documented.
