@@ -1,20 +1,37 @@
-apiVersion: apps/v1
-kind: Deployment
+apiVersion: v1
+kind: Pod
 metadata:
-  name: nginx-deployment
+  name: nginx-pod
 spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: nginx
-  template:
-    metadata:
-      labels:
-        app: nginx
-    spec:
-      containers:
-      - name: nginx
-        image: nginx:latest
-        ports:
-        - containerPort: 80
+  volumes:
+  - name: shared-data
+    emptyDir: {}
+  - name: nginx-logs
+    hostPath:
+      path: /var/log/nginx
+      type: DirectoryOrCreate
 
+  initContainers:
+  - name: init-fetch-index
+    image: curlimages/curl:latest
+    command: ['sh', '-c', 'curl -o /mnt/index.html http://example.com/index.html']
+    volumeMounts:
+    - name: shared-data
+      mountPath: /mnt
+
+  containers:
+  - name: nginx
+    image: nginx:latest
+    ports:
+    - containerPort: 80
+    volumeMounts:
+    - name: shared-data
+      mountPath: /usr/share/nginx/html
+    - name: nginx-logs
+      mountPath: /var/log/nginx
+    livenessProbe:
+      httpGet:
+        path: /healthz
+        port: 80
+      initialDelaySeconds: 5
+      periodSeconds: 5
